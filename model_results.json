@@ -1,0 +1,19 @@
+{
+  "Logistic Regression": {
+    "accuracy": 99.55,
+    "f1": 99.56
+  },
+  "Random Forest": {
+    "accuracy": 95.75,
+    "f1": 95.72
+  },
+  "XGBoost": {
+    "accuracy": 95.41,
+    "f1": 95.41
+  },
+  "SVM": {
+    "accuracy": 96.25,
+    "f1": 96.31
+  },
+  "best": "Logistic Regression"
+}
