@@ -10,6 +10,8 @@ import numpy as np
 import joblib
 import json
 import plotly.graph_objects as go
+import plotly.express as px
+import io
 
 # ============================================================
 # PAGE CONFIG
@@ -86,11 +88,11 @@ SEGMENT_CONFIG = {
     },
     'High-Value': {
         'color': '#2ecc71', 'icon': '💎', 'css': 'high-value',
-        'strategy': 'Try different channels (catalog, in-store), personalized recommendations. Current campaigns aren\'t reaching them — only 0.3% responded last time.'
+        'strategy': 'Try different channels (catalog, in-store), personalized recommendations. Current campaigns aren\'t reaching them.'
     },
     'Deal-Seeking Parents': {
         'color': '#f39c12', 'icon': '🛒', 'css': 'deal-seeking',
-        'strategy': 'Discount codes, bundle deals, family-oriented promotions. Engage through the website — they\'re already browsing 6.7 times/month.'
+        'strategy': 'Discount codes, bundle deals, family-oriented promotions. Engage through the website.'
     },
     'Budget-Conscious': {
         'color': '#3498db', 'icon': '💰', 'css': 'budget-conscious',
@@ -99,76 +101,140 @@ SEGMENT_CONFIG = {
 }
 
 # ============================================================
-# SIDEBAR — CUSTOMER INPUT
+# SIDEBAR — SINGLE CUSTOMER INPUT
 # ============================================================
-st.sidebar.markdown("## 🎯 Customer Details")
-st.sidebar.markdown("Adjust the sliders to predict a customer's segment.")
+st.sidebar.markdown("## 🎯 Single Customer Check")
+st.sidebar.markdown("Use this to test a specific customer profile.")
 st.sidebar.markdown("---")
 
 if models_loaded:
-    income = st.sidebar.slider("💵 Annual Income ($)",
-        min_value=1000, max_value=200000, value=50000, step=1000, format="$%d")
-
-    recency = st.sidebar.slider("📅 Days Since Last Purchase",
-        min_value=0, max_value=100, value=45)
-
-    age = st.sidebar.slider("🎂 Age",
-        min_value=18, max_value=90, value=45)
-
-    total_spend = st.sidebar.slider("🛍️ Total Spend ($)",
-        min_value=0, max_value=3000, value=500, step=10, format="$%d")
-
-    total_purchases = st.sidebar.slider("📦 Total Purchases",
-        min_value=0, max_value=40, value=12)
-
-    total_dependents = st.sidebar.selectbox("👨‍👩‍👧‍👦 Total Dependents",
-        options=[0, 1, 2, 3], index=1)
-
-    campaigns_accepted = st.sidebar.selectbox("📢 Campaigns Accepted",
-        options=[0, 1, 2, 3, 4, 5], index=0)
-
-    deal_purchases = st.sidebar.slider("🏷️ Deal Purchases",
-        min_value=0, max_value=15, value=2)
-
-    web_visits = st.sidebar.slider("🌐 Web Visits / Month",
-        min_value=0, max_value=20, value=5)
-
-    response = st.sidebar.selectbox("📩 Last Campaign Response",
-        options=["No", "Yes"], index=0)
+    income = st.sidebar.slider("💵 Annual Income ($)", min_value=1000, max_value=200000, value=50000, step=1000)
+    recency = st.sidebar.slider("📅 Days Since Last Purchase", min_value=0, max_value=100, value=45)
+    age = st.sidebar.slider("🎂 Age", min_value=18, max_value=90, value=45)
+    total_spend = st.sidebar.slider("🛍️ Total Spend ($)", min_value=0, max_value=3000, value=500, step=10)
+    total_purchases = st.sidebar.slider("📦 Total Purchases", min_value=0, max_value=40, value=12)
+    total_dependents = st.sidebar.selectbox("👨‍👩‍👧‍👦 Total Dependents", options=[0, 1, 2, 3], index=1)
+    campaigns_accepted = st.sidebar.selectbox("📢 Campaigns Accepted", options=[0, 1, 2, 3, 4, 5], index=0)
+    deal_purchases = st.sidebar.slider("🏷️ Deal Purchases", min_value=0, max_value=15, value=2)
+    web_visits = st.sidebar.slider("🌐 Web Visits / Month", min_value=0, max_value=20, value=5)
+    
+    response = st.sidebar.selectbox("📩 Last Campaign Response", options=["No", "Yes"], index=0)
     response_val = 1 if response == "Yes" else 0
-
-    education = st.sidebar.selectbox("🎓 Education",
-        options=["Undergraduate", "Graduate", "Postgraduate"], index=1)
+    
+    education = st.sidebar.selectbox("🎓 Education", options=["Undergraduate", "Graduate", "Postgraduate"], index=1)
     education_val = {"Undergraduate": 0, "Graduate": 1, "Postgraduate": 2}[education]
-
-    marital = st.sidebar.selectbox("💍 Marital Status",
-        options=["Partnered", "Single"], index=0)
+    
+    marital = st.sidebar.selectbox("💍 Marital Status", options=["Partnered", "Single"], index=0)
     marital_val = {"Partnered": 0, "Single": 1}[marital]
 
 # ============================================================
 # MAIN CONTENT
 # ============================================================
 st.markdown('<p class="main-header">🎯 Customer Segmentation Predictor</p>', unsafe_allow_html=True)
-st.markdown('<p class="sub-header">Predict which segment a new customer belongs to — with confidence scores and feature importance</p>', unsafe_allow_html=True)
+st.markdown('<p class="sub-header">Upload a database for batch processing or test individual customer profiles.</p>', unsafe_allow_html=True)
 
 if not models_loaded:
     st.error(f"⚠️ Could not load model files: {load_error}")
-    st.info("Ensure these files are in the same directory as app.py: "
-            "classification_scaler.pkl, classification_model.pkl, label_encoder.pkl, "
-            "feature_columns.json, segment_profiles.json, model_results.json")
+    st.info("Ensure all .pkl and .json files are in the same directory as app.py")
     st.stop()
 
 # --- TABS ---
-tab1, tab2, tab3 = st.tabs(["🔮 **Predict Segment**", "📊 **Segment Overview**", "ℹ️ **About**"])
+tab1, tab2, tab3 = st.tabs(["📁 **Batch Prediction (CSV)**", "🔮 **Single Customer Check**", "📊 **Model Insights**"])
 
 # ============================================================
-# TAB 1: PREDICTION
+# TAB 1: BATCH PREDICTION (CSV)
 # ============================================================
 with tab1:
-    # Build input
+    st.markdown("### 📤 Upload Customer Data")
+    st.markdown(f"**Required columns:** `{', '.join(feature_cols)}`")
+    
+    uploaded_file = st.file_uploader("Upload a CSV file with your unsegmented customers", type=['csv'])
+    
+    if uploaded_file is not None:
+        try:
+            # Read data
+            batch_df = pd.read_csv(uploaded_file)
+            
+            # Check if all required columns are present
+            missing_cols = [col for col in feature_cols if col not in batch_df.columns]
+            
+            if missing_cols:
+                st.error(f"⚠️ Missing required columns in CSV: {', '.join(missing_cols)}")
+            else:
+                # Filter down to just the columns the model expects
+                X_batch = batch_df[feature_cols].copy()
+                
+                # --- DATA TRANSLATION FIX ---
+                # Convert text categories to numeric values exactly how the model expects them
+                edu_map = {"Undergraduate": 0, "Graduate": 1, "Postgraduate": 2}
+                if X_batch['Education'].dtype == 'object':
+                    X_batch['Education'] = X_batch['Education'].map(edu_map)
+                
+                marital_map = {"Partnered": 0, "Single": 1}
+                if X_batch['Marital_Status'].dtype == 'object':
+                    X_batch['Marital_Status'] = X_batch['Marital_Status'].map(marital_map)
+                
+                # Fill any potential NaNs created by mapping unrecognized categories
+                X_batch = X_batch.fillna(0)
+                # ----------------------------
+                
+                # Predict
+                X_scaled = scaler.transform(X_batch)
+                predictions_encoded = classifier.predict(X_scaled)
+                predictions_labels = le.inverse_transform(predictions_encoded)
+                
+                # Append results to the original dataframe
+                batch_df['Predicted_Segment'] = predictions_labels
+                
+                st.success(f"✅ Successfully segmented {len(batch_df)} customers!")
+                
+                # Dynamic Visualization of the uploaded batch
+                col1, col2 = st.columns([1, 2])
+                
+                with col1:
+                    st.markdown("#### Segment Breakdown")
+                    segment_counts = batch_df['Predicted_Segment'].value_counts().reset_index()
+                    segment_counts.columns = ['Segment', 'Count']
+                    
+                    colors = [SEGMENT_CONFIG.get(s, {}).get('color', '#999') for s in segment_counts['Segment']]
+                    
+                    fig_pie = px.pie(segment_counts, values='Count', names='Segment', 
+                                     color='Segment', color_discrete_map={k: v['color'] for k, v in SEGMENT_CONFIG.items()},
+                                     hole=0.4)
+                    fig_pie.update_layout(margin=dict(t=0, b=0, l=0, r=0), height=300)
+                    st.plotly_chart(fig_pie, use_container_width=True)
+                
+                with col2:
+                    st.markdown("#### Data Preview")
+                    # Show the first few rows with the new prediction column at the front
+                    cols_to_show = ['Predicted_Segment'] + [c for c in batch_df.columns if c != 'Predicted_Segment']
+                    st.dataframe(batch_df[cols_to_show].head(10), use_container_width=True)
+                
+                # Download Button
+                st.markdown("---")
+                csv_buffer = io.StringIO()
+                batch_df.to_csv(csv_buffer, index=False)
+                st.download_button(
+                    label="📥 Download Segmented Customers (CSV)",
+                    data=csv_buffer.getvalue(),
+                    file_name="segmented_customers_results.csv",
+                    mime="text/csv",
+                    type="primary"
+                )
+                
+        except Exception as e:
+            st.error(f"Error processing file: {str(e)}")
+
+# ============================================================
+# TAB 2: SINGLE PREDICTION
+# ============================================================
+with tab2:
+    # Build input list
     input_values = [income, recency, age, total_spend, total_purchases,
                     total_dependents, campaigns_accepted, deal_purchases,
                     web_visits, response_val, education_val, marital_val]
+    
+    # Convert to a 2D DataFrame
     input_data = pd.DataFrame([input_values], columns=feature_cols)
 
     # Scale and predict
@@ -176,7 +242,7 @@ with tab1:
     predicted_encoded = classifier.predict(input_scaled)[0]
     predicted_label = le.inverse_transform([predicted_encoded])[0]
 
-    # Get probabilities
+    # Get probabilities if available
     if hasattr(classifier, 'predict_proba'):
         probabilities = classifier.predict_proba(input_scaled)[0]
         prob_labels = le.inverse_transform(classifier.classes_)
@@ -190,7 +256,6 @@ with tab1:
     col1, col2 = st.columns([1, 1])
 
     with col1:
-        # Result card
         st.markdown(f"""
         <div class="segment-card {seg_config['css']}">
             <div style="font-size: 2.5rem; margin-bottom: 0.5rem;">{seg_config['icon']}</div>
@@ -199,7 +264,6 @@ with tab1:
         </div>
         """, unsafe_allow_html=True)
 
-        # Key metrics
         st.markdown("#### Customer Summary")
         m1, m2, m3, m4 = st.columns(4)
         m1.metric("Income", f"${income:,}")
@@ -208,7 +272,6 @@ with tab1:
         m4.metric("Campaigns", campaigns_accepted)
 
     with col2:
-        # Probability chart
         if probabilities is not None:
             prob_df = pd.DataFrame({
                 'Segment': prob_labels,
@@ -218,63 +281,34 @@ with tab1:
             colors = [SEGMENT_CONFIG.get(s, {}).get('color', '#999') for s in prob_df['Segment']]
 
             fig = go.Figure(go.Bar(
-                x=prob_df['Probability'],
-                y=prob_df['Segment'],
-                orientation='h',
-                marker_color=colors,
-                text=[f"{p:.1f}%" for p in prob_df['Probability']],
-                textposition='outside',
-                textfont=dict(size=14, color='#212121')
+                x=prob_df['Probability'], y=prob_df['Segment'], orientation='h',
+                marker_color=colors, text=[f"{p:.1f}%" for p in prob_df['Probability']],
+                textposition='outside', textfont=dict(size=14, color='#212121')
             ))
             fig.update_layout(
-                title="Confidence Breakdown",
-                xaxis_title="Probability (%)",
-                xaxis=dict(range=[0, 110]),
-                height=300,
-                margin=dict(l=0, r=50, t=40, b=30),
-                plot_bgcolor='rgba(0,0,0,0)',
-                paper_bgcolor='rgba(0,0,0,0)'
+                title="Confidence Breakdown", xaxis_title="Probability (%)",
+                xaxis=dict(range=[0, 110]), height=300,
+                margin=dict(l=0, r=50, t=40, b=30), plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)'
             )
             st.plotly_chart(fig, use_container_width=True)
-        else:
-            st.info("Probability scores not available for this model type.")
 
-    # --- Feature Importance ---
-    st.markdown("---")
-    st.markdown("#### What Drives Segmentation?")
-
+# ============================================================
+# TAB 3: MODEL INSIGHTS
+# ============================================================
+with tab3:
+    st.markdown("#### Feature Importance")
     if hasattr(classifier, 'feature_importances_'):
         importances = pd.Series(classifier.feature_importances_, index=feature_cols)
-    elif hasattr(classifier, 'coef_'):
-        importances = pd.Series(np.abs(classifier.coef_).mean(axis=0), index=feature_cols)
-    else:
-        importances = None
-
-    if importances is not None:
         importances = importances.sort_values(ascending=True)
         fig_imp = go.Figure(go.Bar(
-            x=importances.values,
-            y=importances.index,
-            orientation='h',
-            marker_color='#1565c0',
-            text=[f"{v:.3f}" for v in importances.values],
-            textposition='outside'
+            x=importances.values, y=importances.index, orientation='h',
+            marker_color='#1565c0', text=[f"{v:.3f}" for v in importances.values], textposition='outside'
         ))
-        fig_imp.update_layout(
-            height=380,
-            margin=dict(l=0, r=70, t=10, b=30),
-            xaxis_title="Importance Score",
-            plot_bgcolor='rgba(0,0,0,0)',
-            paper_bgcolor='rgba(0,0,0,0)'
-        )
+        fig_imp.update_layout(height=380, margin=dict(l=0, r=70, t=10, b=30), plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)')
         st.plotly_chart(fig_imp, use_container_width=True)
-
-# ============================================================
-# TAB 2: SEGMENT OVERVIEW
-# ============================================================
-with tab2:
-    st.markdown("#### The 4 Customer Segments")
-
+    
+    st.markdown("---")
+    st.markdown("#### Global Segment Profiles (Training Data)")
     cols = st.columns(4)
     for i, (label, config) in enumerate(SEGMENT_CONFIG.items()):
         if label in profiles:
@@ -287,79 +321,7 @@ with tab2:
                     <div style="font-size: 0.85rem; color: #455a64; line-height: 1.8;">
                         <b>{p['count']}</b> customers ({p['pct']}%)<br>
                         Avg Income: <b>${p['Income']:,.0f}</b><br>
-                        Avg Spend: <b>${p['Total_Spend']:,.0f}</b><br>
-                        Dependents: <b>{p['Total_Dependents']:.1f}</b><br>
-                        Campaigns: <b>{p['Total_Campaigns_Accepted']:.2f}</b><br>
-                        Deals: <b>{p['NumDealsPurchases']:.1f}</b><br>
-                        Web Visits: <b>{p['NumWebVisitsMonth']:.1f}</b>
+                        Avg Spend: <b>${p['Total_Spend']:,.0f}</b>
                     </div>
                 </div>
                 """, unsafe_allow_html=True)
-
-    st.markdown("---")
-    st.markdown("#### Segment Comparison — Key Metrics")
-
-    compare_features = ['Income', 'Total_Spend', 'Total_Purchases',
-                        'Total_Dependents', 'Total_Campaigns_Accepted', 'NumDealsPurchases']
-
-    label_order = sorted(profiles.keys(), key=lambda x: -profiles[x]['Income'])
-
-    for feat in compare_features:
-        values = [profiles[l][feat] for l in label_order]
-        colors = [SEGMENT_CONFIG[l]['color'] for l in label_order]
-
-        fig = go.Figure(go.Bar(
-            x=label_order, y=values,
-            marker_color=colors,
-            text=[f"${v:,.0f}" if feat in ['Income', 'Total_Spend'] else f"{v:.1f}" for v in values],
-            textposition='outside', textfont=dict(size=12)
-        ))
-        fig.update_layout(
-            title=feat, height=280,
-            margin=dict(l=0, r=0, t=40, b=30),
-            plot_bgcolor='rgba(0,0,0,0)',
-            paper_bgcolor='rgba(0,0,0,0)',
-            yaxis_title=""
-        )
-        st.plotly_chart(fig, use_container_width=True)
-
-# ============================================================
-# TAB 3: ABOUT
-# ============================================================
-with tab3:
-    st.markdown("#### About This App")
-    st.markdown("""
-    **Customer Personality Analysis — Segmentation Predictor**
-
-    This app predicts which customer segment a new customer belongs to using a trained classifier.
-    """)
-
-    st.markdown("#### Pipeline")
-    st.markdown("""
-    1. **EDA Notebook** — Cleaned 2,240 customers → 2,236 rows, engineered 12 features
-    2. **Model Building Notebook** — Compared K-Means, Hierarchical, DBSCAN. Selected K-Means (K=4)
-    3. **Classification Notebook** — Trained 4 classifiers on K-Means labels for production deployment
-    4. **This App** — Uses the best classifier to predict segments with confidence scores
-    """)
-
-    st.markdown("#### Model Comparison")
-
-    results_md = "| Model | Accuracy | F1-Score |\n|---|---|---|\n"
-    best = model_results.get('best', '')
-    for name in ['Logistic Regression', 'Random Forest', 'XGBoost', 'SVM']:
-        if name in model_results:
-            r = model_results[name]
-            marker = " ✅" if name == best else ""
-            results_md += f"| {name}{marker} | {r['accuracy']}% | {r['f1']}% |\n"
-    st.markdown(results_md)
-    st.markdown(f"**Selected:** {best}")
-
-    st.markdown("#### Segment Distribution")
-    seg_md = "| Segment | Count | % |\n|---|---|---|\n"
-    for label in sorted(profiles.keys(), key=lambda x: -profiles[x]['count']):
-        p = profiles[label]
-        seg_md += f"| {label} | {p['count']} | {p['pct']}% |\n"
-    st.markdown(seg_md)
-
-    st.markdown("---")
-    st.markdown("**Project:** P-654 | ExcelR Institute")
